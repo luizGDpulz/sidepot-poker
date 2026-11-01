@@ -1,0 +1,20 @@
+{
+  "name": "sidepot-poker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Real-time poker chip counter & tournament manager for live games",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "pnpm -r --if-present run clean"
+  }
+}
