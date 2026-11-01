@@ -1,6 +1,6 @@
 import type { HandStreet } from '@sidepot/core';
 
-export type LocaleCode = 'pt-BR' | 'en';
+export type LocaleCode = 'pt-BR' | 'en' | 'es';
 
 export function formatChips(
   amount: number,
@@ -20,7 +20,13 @@ export function formatClock(totalSeconds: number): string {
 export function formatStreetBadge(
   street: HandStreet,
   locale: LocaleCode,
+  isTournamentOver = false,
 ): string {
+  if (street === 'COMPLETE' && isTournamentOver) {
+    if (locale === 'pt-BR') return 'Torneio Encerrado';
+    if (locale === 'es') return 'Torneo Finalizado';
+    return 'Tournament Complete';
+  }
   const mapPt: Readonly<Record<HandStreet, string>> = {
     IDLE: 'Aguardando Mão',
     PREFLOP: 'Pré-Flop',
@@ -28,7 +34,7 @@ export function formatStreetBadge(
     TURN: 'Turn',
     RIVER: 'River',
     SHOWDOWN: 'Showdown',
-    COMPLETE: 'Torneio Encerrado',
+    COMPLETE: 'Mão Concluída',
   };
   const mapEn: Readonly<Record<HandStreet, string>> = {
     IDLE: 'Waiting Next Hand',
@@ -37,7 +43,18 @@ export function formatStreetBadge(
     TURN: 'Turn',
     RIVER: 'River',
     SHOWDOWN: 'Showdown',
-    COMPLETE: 'Tournament Complete',
+    COMPLETE: 'Hand Complete',
   };
-  return locale === 'pt-BR' ? mapPt[street] : mapEn[street];
+  const mapEs: Readonly<Record<HandStreet, string>> = {
+    IDLE: 'Esperando Mano',
+    PREFLOP: 'Pre-Flop',
+    FLOP: 'Flop',
+    TURN: 'Turn',
+    RIVER: 'River',
+    SHOWDOWN: 'Showdown',
+    COMPLETE: 'Mano Completada',
+  };
+  if (locale === 'pt-BR') return mapPt[street];
+  if (locale === 'es') return mapEs[street];
+  return mapEn[street];
 }
