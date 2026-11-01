@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --color-bg-canvas: #09090b;
+  --color-bg-surface: #18181b;
+  --color-accent-emerald: #10b981;
+  --color-accent-amber: #f59e0b;
+  --color-danger-rose: #f43f5e;
+  --scrollbar-track: #09090b;
+  --scrollbar-thumb: #3f3f46;
+
+  accent-color: var(--color-accent-emerald);
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+@supports not (scrollbar-color: auto) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--scrollbar-track);
+  }
+}
+
+html,
+body {
+  background-color: var(--color-bg-canvas);
+  color: #f4f4f5;
+  min-height: 100dvh;
+}
+
+.tabular-chips {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Native modal <dialog> scroll containment & backdrop (per modern-web-guidance) */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(9, 9, 11, 0.8);
+  backdrop-filter: blur(4px);
+}
+
+/* Progressive post-interaction validation (:user-invalid + WeakMap fallback) */
+.field-hint {
+  display: block;
+  color: #a1a1aa;
+  font-size: 0.78rem;
+  margin-bottom: 0.35rem;
+}
+
+.error-msg {
+  display: none;
+  color: #fb7185;
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+
+input:user-invalid,
+input.user-invalid-fallback {
+  border-color: #f43f5e;
+  background-color: rgba(244, 63, 94, 0.1);
+}
+
+input:user-invalid + .error-msg,
+input.user-invalid-fallback + .error-msg {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.field-group:has(input:user-invalid) .field-hint,
+.field-group:has(input.user-invalid-fallback) .field-hint {
+  color: #fda4af;
+}
+
+input:user-valid,
+input.user-valid-fallback {
+  border-color: rgba(16, 185, 129, 0.65);
+}

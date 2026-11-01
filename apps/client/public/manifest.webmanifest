@@ -1,0 +1,18 @@
+{
+  "name": "Sidepot — Live Poker Chips",
+  "short_name": "Sidepot",
+  "description": "Real-time poker chip counter & tournament manager for live physical-card games.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
