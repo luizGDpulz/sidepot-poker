@@ -1,7 +1,7 @@
 import type { PlayerActionInput } from './actions.js';
 import { PokerDomainError, assertPositiveIntegerChips } from './errors.js';
-import { applyUncalledBetRefund, buildLivePotsPreview } from './hand.js';
 import { getLegalActions } from './legal-actions.js';
+import { calculateSidePots, refundUncalledBet } from './pots.js';
 import {
   findFirstPostflopActor,
   getCurrentBlindLevel,
@@ -172,11 +172,11 @@ function transitionToShowdown(
   seats: readonly (Player | null)[],
 ): TableState {
   const blindLevel = getCurrentBlindLevel(state);
-  const { seats: refundedSeats, refund } = applyUncalledBetRefund(seats);
+  const { seats: refundedSeats, refund } = refundUncalledBet(seats);
   const cleanSeats = refundedSeats.map((p) =>
     p ? { ...p, streetBet: 0, lastActedFullRaiseCount: null } : null,
   );
-  const finalPots = buildLivePotsPreview(cleanSeats, true);
+  const finalPots = calculateSidePots(cleanSeats, true);
 
   return {
     ...state,
@@ -364,7 +364,7 @@ export function applyPlayerAction(
 
   if (contenders.length === 1) {
     const soleWinner = contenders[0]!;
-    const { seats: refundedSeats, refund } = applyUncalledBetRefund(nextSeats);
+    const { seats: refundedSeats, refund } = refundUncalledBet(nextSeats);
     const totalPot = refundedSeats.reduce(
       (sum, p) => sum + (p ? p.handContribution : 0),
       0,
@@ -408,7 +408,7 @@ export function applyPlayerAction(
       seats: nextSeats,
       actingSeatIndex: nextActorSeat,
       betting: nextBetting,
-      pots: buildLivePotsPreview(nextSeats, false),
+      pots: calculateSidePots(nextSeats, false),
     };
   }
 
@@ -447,6 +447,6 @@ export function applyPlayerAction(
       minRaiseIncrement: blindLevel.bigBlind,
       fullRaiseCount: 0,
     },
-    pots: buildLivePotsPreview(resetStreetSeats, false),
+    pots: calculateSidePots(resetStreetSeats, false),
   };
 }
