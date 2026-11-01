@@ -13,3 +13,4 @@ export * from './hand.js';
 export * from './legal-actions.js';
 export * from './betting.js';
 export * from './showdown.js';
+export * from './tournament.js';
