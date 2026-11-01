@@ -148,9 +148,11 @@ export function finalizeHandCompletion(
     (p): p is Player => p !== null && p.stack > 0 && p.status !== 'ELIMINATED',
   );
 
-  // Crown a champion only if at least one player has been eliminated and 1 survivor holds all chips
+  const isCashGame = state.config.gameMode === 'CASH';
+
+  // Crown a champion only in TOURNAMENT mode when at least one player busted and 1 survivor holds all chips
   const championPlayerId =
-    allEliminations.length > 0 && remainingWithChips.length === 1
+    !isCashGame && allEliminations.length > 0 && remainingWithChips.length === 1
       ? (remainingWithChips[0]?.id ?? null)
       : null;
 
@@ -448,5 +450,37 @@ export function applyPlayerAction(
       fullRaiseCount: 0,
     },
     pots: calculateSidePots(resetStreetSeats, false),
+  };
+}
+
+/**
+ * Forces the currently acting player to skip their turn (used by Host when a player is AFK or timed out).
+ * Automatically checks if checking is legal; otherwise folds the player's hand.
+ */
+export function forceSkipCurrentTurn(state: TableState): {
+  readonly state: TableState;
+  readonly skippedPlayerId: string;
+  readonly actionTaken: 'CHECK' | 'FOLD';
+} {
+  if (state.actingSeatIndex === null) {
+    throw new PokerDomainError(
+      'HAND_NOT_IN_PROGRESS',
+      'No player is currently acting',
+    );
+  }
+  const actingPlayer = state.seats[state.actingSeatIndex];
+  if (!actingPlayer) {
+    throw new PokerDomainError('NOT_PLAYERS_TURN', 'Acting seat is empty');
+  }
+  const legal = getLegalActions(state, actingPlayer.id);
+  const actionTaken: 'CHECK' | 'FOLD' = legal?.canCheck ? 'CHECK' : 'FOLD';
+  const nextState = applyPlayerAction(state, {
+    playerId: actingPlayer.id,
+    type: actionTaken,
+  });
+  return {
+    state: nextState,
+    skippedPlayerId: actingPlayer.id,
+    actionTaken,
   };
 }

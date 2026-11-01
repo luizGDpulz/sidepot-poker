@@ -84,7 +84,8 @@ export function rebuyPlayer(state: TableState, playerId: PlayerId): TableState {
       'Cannot process a rebuy while a hand is in progress',
     );
   }
-  if (!state.config.allowRebuys) {
+  const isCashGame = state.config.gameMode === 'CASH';
+  if (!isCashGame && !state.config.allowRebuys) {
     throw new PokerDomainError(
       'REBUY_NOT_ALLOWED',
       'Rebuys are disabled for this tournament',
@@ -92,7 +93,7 @@ export function rebuyPlayer(state: TableState, playerId: PlayerId): TableState {
   }
 
   const currentLevel = getCurrentBlindLevel(state);
-  if (currentLevel.level > state.config.rebuyMaxLevel) {
+  if (!isCashGame && currentLevel.level > state.config.rebuyMaxLevel) {
     throw new PokerDomainError(
       'REBUY_NOT_ALLOWED',
       `Rebuy period ended after blind level ${String(state.config.rebuyMaxLevel)} (current level: ${String(currentLevel.level)})`,
@@ -109,7 +110,7 @@ export function rebuyPlayer(state: TableState, playerId: PlayerId): TableState {
       `Player "${playerId}" still has ${String(player.stack)} chips and cannot rebuy`,
     );
   }
-  if (player.rebuyCount >= state.config.maxRebuysPerPlayer) {
+  if (!isCashGame && player.rebuyCount >= state.config.maxRebuysPerPlayer) {
     throw new PokerDomainError(
       'REBUY_NOT_ALLOWED',
       `Player "${playerId}" has reached the maximum of ${String(state.config.maxRebuysPerPlayer)} rebuys`,

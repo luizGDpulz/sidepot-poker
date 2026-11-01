@@ -7,6 +7,7 @@ import {
   advanceBlindLevel,
   applyPlayerAction,
   createTable,
+  forceSkipCurrentTurn,
   getCurrentBlindLevel,
   getTournamentLeaderboard,
   rebuyPlayer,
@@ -145,5 +146,42 @@ describe('Tournament Blind Schedule, Rebuys, Add-ons & Elimination Leaderboard',
     table = resolveShowdown(table, { winnersByPotId: { main: ['p1'] } });
 
     expect(() => rebuyPlayer(table, 'p2')).toThrow(PokerDomainError);
+  });
+
+  it('supports Cash Game / Fixed-Blinds mode without crowning a champion and allows force-skipping AFK turns', () => {
+    let table = createTable({
+      id: 'cash-1',
+      name: 'Friday Cash Game',
+      config: {
+        gameMode: 'CASH',
+        actionTimeSeconds: 30,
+        startingStack: 1000,
+        blindSchedule: [
+          { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationSeconds: 3600 },
+        ],
+      },
+    });
+    table = seatPlayer(table, { id: 'p1', name: 'Alice', stack: 1000 });
+    table = seatPlayer(table, { id: 'p2', name: 'Bob', stack: 1000 });
+
+    table = startNextHand(table);
+    // Force skip Alice's turn preflop (facing 20 BB with 10 SB -> must fold)
+    const skipped = forceSkipCurrentTurn(table);
+    expect(skipped.skippedPlayerId).toBe('p1');
+    expect(skipped.actionTaken).toBe('FOLD');
+    table = skipped.state;
+    expect(table.street).toBe('COMPLETE');
+    expect(table.championPlayerId).toBeNull();
+
+    // Hand 2: All-in bustout in CASH mode never sets championPlayerId
+    table = startNextHand(table);
+    table = applyPlayerAction(table, { playerId: 'p2', type: 'ALL_IN' });
+    table = applyPlayerAction(table, { playerId: 'p1', type: 'CALL' });
+    table = resolveShowdown(table, { winnersByPotId: { main: ['p2'] } });
+    expect(table.championPlayerId).toBeNull();
+
+    // Unlimited rebuys in CASH mode
+    table = rebuyPlayer(table, 'p1');
+    expect(table.seats[0]?.stack).toBe(1000);
   });
 });

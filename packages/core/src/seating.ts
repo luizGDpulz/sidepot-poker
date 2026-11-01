@@ -26,6 +26,8 @@ export const DEFAULT_BLIND_SCHEDULE: readonly BlindLevel[] = [
 ];
 
 export const DEFAULT_TABLE_CONFIG: TableConfig = {
+  gameMode: 'TOURNAMENT',
+  actionTimeSeconds: null,
   maxSeats: 9,
   startingStack: 5000,
   blindSchedule: DEFAULT_BLIND_SCHEDULE,
@@ -78,8 +80,11 @@ export function validateTableConfig(config: TableConfig): void {
 }
 
 export function createTable(params: CreateTableParams): TableState {
+  const startingStack = params.config?.startingStack ?? DEFAULT_TABLE_CONFIG.startingStack;
   const config: TableConfig = {
     ...DEFAULT_TABLE_CONFIG,
+    rebuyStack: startingStack,
+    addOnStack: startingStack,
     ...params.config,
   };
   validateTableConfig(config);
