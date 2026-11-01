@@ -13,7 +13,10 @@ import type { Chips, Player, Pot, SeatIndex, TableState } from './types.js';
  * Full side-pot slicing with uncalled refunds is finalized in pots.ts; this helper
  * ensures TableState.pots is always accurate right from blind/ante posting.
  */
-export function buildLivePotsPreview(seats: readonly (Player | null)[]): Pot[] {
+export function buildLivePotsPreview(
+  seats: readonly (Player | null)[],
+  finalized = false,
+): Pot[] {
   const contributors = seats.filter(
     (p): p is Player => p !== null && p.handContribution > 0,
   );
@@ -21,12 +24,17 @@ export function buildLivePotsPreview(seats: readonly (Player | null)[]): Pot[] {
     return [];
   }
 
-  const contenders = contributors.filter((p) => p.status !== 'FOLDED');
+  const nonFolded = seats.filter(
+    (p): p is Player =>
+      p !== null && (p.status === 'ACTIVE' || p.status === 'ALL_IN'),
+  );
   const maxContribution = Math.max(...contributors.map((p) => p.handContribution));
 
   const levelsSet = new Set<Chips>();
-  for (const c of contenders) {
-    if (c.handContribution > 0) {
+  for (const c of nonFolded) {
+    if (c.status === 'ALL_IN' && c.handContribution > 0) {
+      levelsSet.add(c.handContribution);
+    } else if (finalized && c.handContribution > 0) {
       levelsSet.add(c.handContribution);
     }
   }
@@ -44,8 +52,12 @@ export function buildLivePotsPreview(seats: readonly (Player | null)[]): Pot[] {
     }
 
     if (sliceAmount > 0) {
-      const eligibleIds = contenders
-        .filter((p) => p.handContribution >= cap)
+      const eligibleIds = nonFolded
+        .filter((p) =>
+          finalized || p.status === 'ALL_IN'
+            ? p.handContribution >= cap
+            : true,
+        )
         .map((p) => p.id);
 
       const previousSlice = rawSlices[rawSlices.length - 1];
@@ -194,7 +206,7 @@ export function startNextHand(state: TableState): TableState {
 
   if (noFurtherBettingPossible) {
     const { seats: refundedSeats, refund } = applyUncalledBetRefund(postedSeats);
-    const finalPots = buildLivePotsPreview(refundedSeats);
+    const finalPots = buildLivePotsPreview(refundedSeats, true);
     return {
       ...state,
       seats: refundedSeats,
