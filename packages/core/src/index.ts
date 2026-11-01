@@ -8,3 +8,4 @@ export * from './actions.js';
 export * from './errors.js';
 export * from './seating.js';
 export * from './rotation.js';
+export * from './hand.js';
