@@ -7,14 +7,18 @@ import {
   canUndoTableTransition,
   createTable,
   createTableHistory,
+  forceSkipCurrentTurn,
   getCurrentBlindLevel,
   getLegalActions,
+  getPlayerById,
   getTournamentLeaderboard,
+  isHandActive,
   rebuyPlayer,
   recordTableTransition,
   removePlayer,
   resolveShowdown,
   seatPlayer,
+  setPlayerSittingOut,
   startNextHand,
   undoTableTransition,
   type BettingActionType,
@@ -30,6 +34,7 @@ import {
   type PublicRoomSnapshot,
   type SeatIndex,
   type TableHistoryState,
+  type TableLogEntry,
 } from '@sidepot/core';
 import {
   createRoomSecurityStore,
@@ -66,6 +71,8 @@ export interface RoomInstance {
   hostPlayerId: PlayerId | null;
   isLocked: boolean;
   readonly pendingRequests: Map<string, PendingJoinRequest>;
+  readonly actionLog: TableLogEntry[];
+  turnStartedAtMs: number | null;
   clockRunning: boolean;
   clockRemainingSeconds: number;
   clockUpdatedAtMs: number;
@@ -73,6 +80,7 @@ export interface RoomInstance {
 }
 
 const MAX_PENDING_JOIN_REQUESTS = 30;
+const MAX_ACTION_LOG_ENTRIES = 80;
 
 function sanitizeDisplayName(raw: string): string {
   const trimmed = raw.trim().slice(0, 28);
@@ -80,6 +88,37 @@ function sanitizeDisplayName(raw: string): string {
     throw new ServerHttpError(400, 'INVALID_NAME', 'Player display name cannot be empty');
   }
   return trimmed;
+}
+
+function appendRoomLog(room: RoomInstance, message: string, nowMs = Date.now()): void {
+  const present = room.history.present;
+  room.actionLog.push({
+    id: generateOpaqueToken('log', 4),
+    timestampMs: nowMs,
+    handNumber: present.handNumber,
+    street: present.street,
+    message,
+  });
+  if (room.actionLog.length > MAX_ACTION_LOG_ENTRIES) {
+    room.actionLog.splice(0, room.actionLog.length - MAX_ACTION_LOG_ENTRIES);
+  }
+}
+
+function syncRoomTurnTimer(room: RoomInstance, nowMs = Date.now()): void {
+  room.turnStartedAtMs =
+    room.history.present.actingSeatIndex !== null ? nowMs : null;
+}
+
+function formatHandAwards(room: RoomInstance): string {
+  const present = room.history.present;
+  const parts: string[] = [];
+  for (const award of present.lastHandAwards) {
+    for (const [winnerId, payout] of Object.entries(award.payouts)) {
+      const wName = getPlayerById(present, winnerId)?.name ?? winnerId;
+      parts.push(`${wName} +${String(payout)}`);
+    }
+  }
+  return parts.join(', ');
 }
 
 export class RoomManager {
@@ -111,11 +150,22 @@ export class RoomManager {
       hostPlayerId,
       isLocked: false,
       pendingRequests: new Map<string, PendingJoinRequest>(),
+      actionLog: [],
+      turnStartedAtMs: null,
       clockRunning: false,
       clockRemainingSeconds: firstLevel.durationSeconds,
       clockUpdatedAtMs: nowMs,
       createdAtMs: nowMs,
     };
+
+    const modeTag = table.config.gameMode === 'CASH' ? 'Cash Game' : 'Tournament';
+    appendRoomLog(room, `Table "${table.name}" created (${modeTag})`, nowMs);
+    if (hostPlayerId) {
+      const hostPlayer = getPlayerById(table, hostPlayerId);
+      if (hostPlayer) {
+        appendRoomLog(room, `${hostPlayer.name} seated at Seat #${String(hostPlayer.seatIndex + 1)}`, nowMs);
+      }
+    }
 
     this.rooms.set(roomId, room);
 
@@ -227,6 +277,12 @@ export class RoomManager {
     room.pendingRequests.delete(requestId);
     revokeApplicantTokenByRequestId(room.security, requestId);
 
+    const seatedPlayer = getPlayerById(room.history.present, playerId);
+    appendRoomLog(
+      room,
+      `${pending.name} joined at Seat #${String((seatedPlayer?.seatIndex ?? 0) + 1)}`,
+    );
+
     return { playerId, sessionToken };
   }
 
@@ -258,12 +314,18 @@ export class RoomManager {
         }),
     );
     room.hostPlayerId = playerId;
+    const seatedPlayer = getPlayerById(room.history.present, playerId);
+    appendRoomLog(
+      room,
+      `${cleanName} (Host) seated at Seat #${String((seatedPlayer?.seatIndex ?? 0) + 1)}`,
+    );
     return playerId;
   }
 
   public setRoomLocked(roomId: string, isLocked: boolean): void {
     const room = this.requireRoom(roomId);
     room.isLocked = isLocked;
+    appendRoomLog(room, isLocked ? 'Table locked by Host' : 'Table unlocked by Host');
   }
 
   public dispatchPlayerAction(
@@ -271,8 +333,12 @@ export class RoomManager {
     playerId: PlayerId,
     action: BettingActionType,
     amount?: Chips,
+    nowMs = Date.now(),
   ): void {
     const room = this.requireRoom(roomId);
+    const actorBefore = getPlayerById(room.history.present, playerId);
+    const actorName = actorBefore?.name ?? playerId;
+    const prevStreet = room.history.present.street;
     let actionInput: PlayerActionInput;
 
     if (action === 'BET' || action === 'RAISE') {
@@ -289,9 +355,31 @@ export class RoomManager {
 
     room.history = recordTableTransition(
       room.history,
-      `${playerId}: ${action}`,
+      `${actorName}: ${action}`,
       (state) => applyPlayerAction(state, actionInput),
     );
+    syncRoomTurnTimer(room, nowMs);
+
+    const actorAfter = getPlayerById(room.history.present, playerId);
+    const detailSuffix =
+      action === 'BET' || action === 'RAISE'
+        ? ` to ${String(amount)}`
+        : action === 'CALL' || action === 'ALL_IN'
+          ? ` (${String(actorAfter?.streetBet ?? 0)})`
+          : '';
+    appendRoomLog(room, `${actorName}: ${action}${detailSuffix}`, nowMs);
+
+    const nextStreet = room.history.present.street;
+    if (nextStreet !== prevStreet) {
+      if (nextStreet === 'COMPLETE') {
+        const awardsSummary = formatHandAwards(room);
+        if (awardsSummary) {
+          appendRoomLog(room, `Hand #${String(room.history.present.handNumber)} won: ${awardsSummary}`, nowMs);
+        }
+      } else {
+        appendRoomLog(room, `Board advanced to ${nextStreet}`, nowMs);
+      }
+    }
   }
 
   public startHand(roomId: string, nowMs = Date.now()): void {
@@ -302,15 +390,24 @@ export class RoomManager {
       `Start Hand #${String(room.history.present.handNumber + 1)}`,
       (state) => startNextHand(state),
     );
-    if (wasFirstHand && !room.clockRunning) {
+    syncRoomTurnTimer(room, nowMs);
+    const isCash = room.history.present.config.gameMode === 'CASH';
+    if (wasFirstHand && !room.clockRunning && !isCash) {
       room.clockRunning = true;
       room.clockUpdatedAtMs = nowMs;
     }
+    const lvl = getCurrentBlindLevel(room.history.present);
+    appendRoomLog(
+      room,
+      `Hand #${String(room.history.present.handNumber)} started — Blinds ${String(lvl.smallBlind)}/${String(lvl.bigBlind)}`,
+      nowMs,
+    );
   }
 
   public resolveShowdown(
     roomId: string,
     winnersByPotId: Readonly<Record<string, readonly PlayerId[]>>,
+    nowMs = Date.now(),
   ): void {
     const room = this.requireRoom(roomId);
     room.history = recordTableTransition(
@@ -318,53 +415,165 @@ export class RoomManager {
       `Showdown Hand #${String(room.history.present.handNumber)}`,
       (state) => resolveShowdown(state, { winnersByPotId }),
     );
+    syncRoomTurnTimer(room, nowMs);
+    const awardsSummary = formatHandAwards(room);
+    appendRoomLog(
+      room,
+      `Showdown Hand #${String(room.history.present.handNumber)}: ${awardsSummary || 'Complete'}`,
+      nowMs,
+    );
   }
 
-  public undo(roomId: string): string {
+  public undo(roomId: string, nowMs = Date.now()): string {
     const room = this.requireRoom(roomId);
     const result = undoTableTransition(room.history);
     room.history = result.history;
+    syncRoomTurnTimer(room, nowMs);
+    appendRoomLog(room, `Undo: ${result.undoneLabel}`, nowMs);
     return result.undoneLabel;
   }
 
-  public adjustStack(roomId: string, playerId: PlayerId, newStack: Chips): void {
+  public adjustStack(roomId: string, playerId: PlayerId, newStack: Chips, nowMs = Date.now()): void {
     const room = this.requireRoom(roomId);
+    const pName = getPlayerById(room.history.present, playerId)?.name ?? playerId;
     room.history = recordTableTransition(
       room.history,
-      `Adjust ${playerId} -> ${String(newStack)}`,
+      `Adjust ${pName} -> ${String(newStack)}`,
       (state) => adjustPlayerStackManually(state, { playerId, newStack }),
     );
+    appendRoomLog(room, `Stack adjusted: ${pName} -> ${String(newStack)}`, nowMs);
   }
 
-  public rebuy(roomId: string, playerId: PlayerId): void {
+  public rebuy(roomId: string, playerId: PlayerId, nowMs = Date.now()): void {
     const room = this.requireRoom(roomId);
+    const pName = getPlayerById(room.history.present, playerId)?.name ?? playerId;
     room.history = recordTableTransition(
       room.history,
-      `Rebuy ${playerId}`,
+      `Rebuy ${pName}`,
       (state) => rebuyPlayer(state, playerId),
     );
-  }
-
-  public addOn(roomId: string, playerId: PlayerId): void {
-    const room = this.requireRoom(roomId);
-    room.history = recordTableTransition(
-      room.history,
-      `Add-on ${playerId}`,
-      (state) => addOnPlayer(state, playerId),
+    appendRoomLog(
+      room,
+      `Re-buy: ${pName} (+${String(room.history.present.config.rebuyStack)})`,
+      nowMs,
     );
   }
 
-  public kickPlayer(roomId: string, playerId: PlayerId): void {
+  public addOn(roomId: string, playerId: PlayerId, nowMs = Date.now()): void {
     const room = this.requireRoom(roomId);
+    const pName = getPlayerById(room.history.present, playerId)?.name ?? playerId;
     room.history = recordTableTransition(
       room.history,
-      `Remove ${playerId}`,
+      `Add-on ${pName}`,
+      (state) => addOnPlayer(state, playerId),
+    );
+    appendRoomLog(
+      room,
+      `Add-on: ${pName} (+${String(room.history.present.config.addOnStack)})`,
+      nowMs,
+    );
+  }
+
+  public kickPlayer(roomId: string, playerId: PlayerId, nowMs = Date.now()): void {
+    const room = this.requireRoom(roomId);
+    const pName = getPlayerById(room.history.present, playerId)?.name ?? playerId;
+    room.history = recordTableTransition(
+      room.history,
+      `Remove ${pName}`,
       (state) => removePlayer(state, playerId),
     );
     revokePlayerSessionTokens(room.security, playerId);
     if (room.hostPlayerId === playerId) {
       room.hostPlayerId = null;
     }
+    syncRoomTurnTimer(room, nowMs);
+    appendRoomLog(room, `${pName} removed from table`, nowMs);
+  }
+
+  public forceSkipTurn(roomId: string, nowMs = Date.now()): void {
+    const room = this.requireRoom(roomId);
+    let skippedName = '';
+    let skippedAction: 'CHECK' | 'FOLD' = 'FOLD';
+    room.history = recordTableTransition(
+      room.history,
+      'Host Skip Turn',
+      (state) => {
+        const res = forceSkipCurrentTurn(state);
+        skippedName = getPlayerById(state, res.skippedPlayerId)?.name ?? res.skippedPlayerId;
+        skippedAction = res.actionTaken;
+        return res.state;
+      },
+    );
+    syncRoomTurnTimer(room, nowMs);
+    appendRoomLog(room, `AFK Skip: ${skippedName} (${skippedAction})`, nowMs);
+  }
+
+  public setSittingOut(
+    roomId: string,
+    playerId: PlayerId,
+    sittingOut: boolean,
+    nowMs = Date.now(),
+  ): void {
+    const room = this.requireRoom(roomId);
+    const pName = getPlayerById(room.history.present, playerId)?.name ?? playerId;
+    room.history = recordTableTransition(
+      room.history,
+      `${pName}: ${sittingOut ? 'Sit Out' : 'Sit In'}`,
+      (state) => {
+        let nextState = state;
+        const target = getPlayerById(nextState, playerId);
+        if (
+          sittingOut &&
+          target &&
+          isHandActive(nextState) &&
+          nextState.actingSeatIndex === target.seatIndex
+        ) {
+          nextState = forceSkipCurrentTurn(nextState).state;
+        }
+        return setPlayerSittingOut(nextState, playerId, sittingOut);
+      },
+    );
+    syncRoomTurnTimer(room, nowMs);
+    appendRoomLog(
+      room,
+      `${pName} is now ${sittingOut ? 'Sitting Out (AFK)' : 'Active'}`,
+      nowMs,
+    );
+  }
+
+  public setActionTimer(
+    roomId: string,
+    actionTimeSeconds: number | null,
+    nowMs = Date.now(),
+  ): void {
+    const room = this.requireRoom(roomId);
+    if (
+      actionTimeSeconds !== null &&
+      (!Number.isSafeInteger(actionTimeSeconds) ||
+        actionTimeSeconds < 5 ||
+        actionTimeSeconds > 300)
+    ) {
+      throw new PokerDomainError(
+        'INVALID_CONFIG',
+        'actionTimeSeconds must be null or an integer between 5 and 300 seconds',
+      );
+    }
+    room.history = {
+      ...room.history,
+      present: {
+        ...room.history.present,
+        config: {
+          ...room.history.present.config,
+          actionTimeSeconds,
+        },
+      },
+    };
+    syncRoomTurnTimer(room, nowMs);
+    appendRoomLog(
+      room,
+      `Turn Shot Clock: ${actionTimeSeconds ? `${String(actionTimeSeconds)}s` : 'Off'}`,
+      nowMs,
+    );
   }
 
   public toggleBlindClock(
@@ -385,6 +594,7 @@ export class RoomManager {
     }
     room.clockRunning = running;
     room.clockUpdatedAtMs = nowMs;
+    appendRoomLog(room, running ? 'Tournament clock resumed' : 'Tournament clock paused', nowMs);
   }
 
   public forceAdvanceBlindLevel(roomId: string, nowMs = Date.now()): boolean {
@@ -401,6 +611,11 @@ export class RoomManager {
     const nextLevel = getCurrentBlindLevel(advanced);
     room.clockRemainingSeconds = nextLevel.durationSeconds;
     room.clockUpdatedAtMs = nowMs;
+    appendRoomLog(
+      room,
+      `Level Up -> Level ${String(nextLevel.level)} (${String(nextLevel.smallBlind)}/${String(nextLevel.bigBlind)})`,
+      nowMs,
+    );
     return true;
   }
 
@@ -440,6 +655,11 @@ export class RoomManager {
     };
     const nextLevel = getCurrentBlindLevel(advanced);
     room.clockRemainingSeconds = nextLevel.durationSeconds;
+    appendRoomLog(
+      room,
+      `Level Up -> Level ${String(nextLevel.level)} (${String(nextLevel.smallBlind)}/${String(nextLevel.bigBlind)})`,
+      nowMs,
+    );
     return true;
   }
 
@@ -449,6 +669,14 @@ export class RoomManager {
   ): PublicRoomSnapshot {
     const table = room.history.present;
     const currentLevel = getCurrentBlindLevel(table);
+    const actionTimeSeconds = table.config.actionTimeSeconds ?? null;
+    const turnDeadlineMs =
+      table.actingSeatIndex !== null &&
+      actionTimeSeconds !== null &&
+      actionTimeSeconds > 0 &&
+      room.turnStartedAtMs !== null
+        ? room.turnStartedAtMs + actionTimeSeconds * 1000
+        : null;
 
     return {
       roomId: room.roomId,
@@ -457,6 +685,8 @@ export class RoomManager {
       table,
       legalActions: getLegalActions(table),
       leaderboard: getTournamentLeaderboard(table),
+      actionLog: [...room.actionLog],
+      turnDeadlineMs,
       blindClock: {
         isRunning: room.clockRunning,
         remainingSeconds: room.clockRemainingSeconds,

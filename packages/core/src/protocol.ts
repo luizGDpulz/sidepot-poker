@@ -2,6 +2,7 @@ import type { BettingActionType, LegalActions } from './actions.js';
 import type { LeaderboardEntry } from './tournament.js';
 import type {
   Chips,
+  HandStreet,
   PlayerId,
   SeatIndex,
   TableConfig,
@@ -9,6 +10,14 @@ import type {
 } from './types.js';
 
 export type SessionRole = 'HOST' | 'PLAYER' | 'DISPLAY' | 'APPLICANT';
+
+export interface TableLogEntry {
+  readonly id: string;
+  readonly timestampMs: number;
+  readonly handNumber: number;
+  readonly street: HandStreet;
+  readonly message: string;
+}
 
 export interface PendingJoinRequest {
   readonly requestId: string;
@@ -34,6 +43,8 @@ export interface PublicRoomSnapshot {
   readonly blindClock: BlindClockSnapshot;
   readonly canUndo: boolean;
   readonly connectedPlayerIds: readonly PlayerId[];
+  readonly actionLog: readonly TableLogEntry[];
+  readonly turnDeadlineMs: number | null;
 }
 
 export interface HostAdminOverlay {
@@ -108,6 +119,16 @@ export type ClientWsMessage =
   | { readonly type: 'host:rebuy'; readonly playerId: PlayerId }
   | { readonly type: 'host:addon'; readonly playerId: PlayerId }
   | { readonly type: 'host:kick_player'; readonly playerId: PlayerId }
+  | { readonly type: 'host:force_skip_turn' }
+  | {
+      readonly type: 'host:set_sitting_out';
+      readonly playerId: PlayerId;
+      readonly sittingOut: boolean;
+    }
+  | {
+      readonly type: 'host:set_action_timer';
+      readonly actionTimeSeconds: number | null;
+    }
   | { readonly type: 'host:toggle_clock'; readonly running: boolean }
   | { readonly type: 'host:advance_blind_level' };
 

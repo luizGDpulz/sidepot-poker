@@ -92,6 +92,15 @@ export function createRoomSession() {
     return Math.max(0, clock.remainingSeconds - elapsedSec);
   });
 
+  const turnRemainingSeconds = computed<number | null>(() => {
+    const deadline = snapshot.value?.turnDeadlineMs ?? null;
+    if (deadline === null) {
+      return null;
+    }
+    const diffSec = Math.ceil((deadline - localClockNowMs.value) / 1000);
+    return Math.max(0, diffSec);
+  });
+
   const clearTimers = (): void => {
     if (reconnectTimer !== null) {
       clearTimeout(reconnectTimer);
@@ -446,6 +455,28 @@ export function createRoomSession() {
     sendRaw({ type: 'host:advance_blind_level' });
   };
 
+  const forceSkipTurn = (): void => {
+    triggerTapHaptic();
+    sendRaw({ type: 'host:force_skip_turn' });
+  };
+
+  const setSittingOut = (targetPlayerId: PlayerId, sittingOut: boolean): void => {
+    triggerTapHaptic();
+    sendRaw({
+      type: 'host:set_sitting_out',
+      playerId: targetPlayerId,
+      sittingOut,
+    });
+  };
+
+  const setActionTimer = (actionTimeSeconds: number | null): void => {
+    triggerTapHaptic();
+    sendRaw({
+      type: 'host:set_action_timer',
+      actionTimeSeconds,
+    });
+  };
+
   return {
     activeRoomId,
     activeToken,
@@ -459,6 +490,7 @@ export function createRoomSession() {
     myPlayer,
     isMyTurn,
     displayRemainingSeconds,
+    turnRemainingSeconds,
     connect,
     disconnect,
     clearError,
@@ -476,6 +508,9 @@ export function createRoomSession() {
     kickPlayer,
     toggleClock,
     advanceBlindLevel,
+    forceSkipTurn,
+    setSittingOut,
+    setActionTimer,
   };
 }
 

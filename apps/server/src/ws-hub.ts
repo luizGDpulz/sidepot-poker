@@ -501,6 +501,24 @@ export class RoomWebSocketHub {
         break;
       }
 
+      case 'host:force_skip_turn': {
+        this.roomManager.forceSkipTurn(roomId);
+        this.broadcastRoomState(roomId, false);
+        break;
+      }
+
+      case 'host:set_sitting_out': {
+        this.roomManager.setSittingOut(roomId, msg.playerId, msg.sittingOut);
+        this.broadcastRoomState(roomId, false);
+        break;
+      }
+
+      case 'host:set_action_timer': {
+        this.roomManager.setActionTimer(roomId, msg.actionTimeSeconds);
+        this.broadcastRoomState(roomId, false);
+        break;
+      }
+
       default:
         this.sendError(conn.ws, 'UNKNOWN_COMMAND', 'Unrecognized command');
     }

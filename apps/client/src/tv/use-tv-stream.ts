@@ -34,6 +34,15 @@ export function useTvDisplayStream() {
     return Math.max(0, clock.remainingSeconds - elapsed);
   });
 
+  const turnRemainingSeconds = computed<number | null>(() => {
+    const deadline = snapshot.value?.turnDeadlineMs ?? null;
+    if (deadline === null) {
+      return null;
+    }
+    const diff = Math.ceil((deadline - nowMs.value) / 1000);
+    return Math.max(0, diff);
+  });
+
   const openReadOnlySocket = (isReconnect: boolean): void => {
     if (stopped || !currentRoomId || !currentToken) {
       return;
@@ -161,6 +170,7 @@ export function useTvDisplayStream() {
     status,
     errorMessage,
     remainingSeconds,
+    turnRemainingSeconds,
     wakeLockActive: wakeLock.isActive,
     start,
     stop,

@@ -2,6 +2,8 @@ export type Chips = number;
 export type PlayerId = string;
 export type SeatIndex = number;
 
+export type GameMode = 'TOURNAMENT' | 'CASH';
+
 export type HandStreet =
   | 'IDLE'
   | 'PREFLOP'
@@ -68,6 +70,8 @@ export interface EliminationEntry {
 }
 
 export interface TableConfig {
+  readonly gameMode?: GameMode;
+  readonly actionTimeSeconds?: number | null;
   readonly maxSeats: number;
   readonly startingStack: Chips;
   readonly blindSchedule: readonly BlindLevel[];

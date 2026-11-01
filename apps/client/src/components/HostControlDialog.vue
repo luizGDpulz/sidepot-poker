@@ -40,7 +40,9 @@ const seatedPlayers = computed<Player[]>(() =>
 );
 
 const isBetweenHands = computed<boolean>(
-  () => props.snapshot.table.street === 'IDLE',
+  () =>
+    props.snapshot.table.street === 'IDLE' ||
+    props.snapshot.table.street === 'COMPLETE',
 );
 
 const liveReadyCount = computed<number>(

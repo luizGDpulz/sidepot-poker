@@ -230,6 +230,51 @@ describe('End-to-End Authoritative WebSocket Hub, Bouncer & Read-Only TV', () =>
     const levelUp = await tvWs.waitFor('clock:level_up');
     expect(levelUp.level).toBe(2);
 
+    // 8. Verify live actionLog, Shot Clock timer, Re-buy, Force-Skip Turn & Sit-Out
+    expect(finalSync.snapshot.actionLog.length).toBeGreaterThanOrEqual(4);
+
+    hostWs.send({ type: 'host:rebuy', playerId: approvedMsg.playerId });
+    await tvWs.waitFor(
+      'table:state_sync',
+      (m) => m.snapshot.table.championPlayerId === null,
+    );
+
+    hostWs.send({ type: 'host:set_action_timer', actionTimeSeconds: 30 });
+    await tvWs.waitFor(
+      'table:state_sync',
+      (m) => m.snapshot.table.config.actionTimeSeconds === 30,
+    );
+
+    hostWs.send({ type: 'host:start_hand' });
+    const hand2Sync = await tvWs.waitFor(
+      'table:state_sync',
+      (m) => m.snapshot.table.handNumber === 2 && m.snapshot.table.street === 'PREFLOP',
+    );
+    expect(hand2Sync.snapshot.turnDeadlineMs).toBeTypeOf('number');
+
+    hostWs.send({ type: 'host:force_skip_turn' });
+    const skippedSync = await tvWs.waitFor(
+      'table:state_sync',
+      (m) => m.snapshot.table.handNumber === 2 && m.snapshot.table.street === 'COMPLETE',
+    );
+    expect(
+      skippedSync.snapshot.actionLog.some((entry) => entry.message.includes('AFK Skip')),
+    ).toBe(true);
+
+    hostWs.send({
+      type: 'host:set_sitting_out',
+      playerId: approvedMsg.playerId,
+      sittingOut: true,
+    });
+    const sitOutSync = await tvWs.waitFor(
+      'table:state_sync',
+      (m) =>
+        m.snapshot.table.seats.some(
+          (p) => p?.id === approvedMsg.playerId && p.status === 'SITTING_OUT',
+        ),
+    );
+    expect(sitOutSync.snapshot.table.seats[1]?.status).toBe('SITTING_OUT');
+
     hostWs.close();
     tvWs.close();
     bobWs.close();

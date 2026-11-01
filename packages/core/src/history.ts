@@ -172,8 +172,9 @@ export function adjustPlayerStackManually(
     }),
   );
 
+  const isCashGame = state.config.gameMode === 'CASH';
   const championPlayerId =
-    normalizedEliminations.length > 0 && livePlayers.length === 1
+    !isCashGame && normalizedEliminations.length > 0 && livePlayers.length === 1
       ? (livePlayers[0]?.id ?? null)
       : null;
 
