@@ -18,6 +18,46 @@ import type {
   TableState,
 } from './types.js';
 
+/**
+ * Evaluates TDA Rule 47 (Re-Opening the Bet) for an ALL_IN wager:
+ * - 47A: A single all-in raise < minRaiseIncrement does NOT reopen raising for players who already acted.
+ * - 47B: Multiple consecutive short all-ins whose cumulative increase from lastFullRaiseBet reaches
+ *        >= minRaiseIncrement DO reopen raising (keeping minRaiseIncrement unchanged unless a single shove exceeded it).
+ */
+export function resolveAllInBettingState(
+  betting: StreetBettingState,
+  targetStreetBet: Chips,
+): StreetBettingState {
+  if (targetStreetBet <= betting.currentBet) {
+    return betting;
+  }
+
+  const singleIncrease = targetStreetBet - betting.currentBet;
+  if (singleIncrease >= betting.minRaiseIncrement) {
+    return {
+      currentBet: targetStreetBet,
+      lastFullRaiseBet: targetStreetBet,
+      minRaiseIncrement: singleIncrease,
+      fullRaiseCount: betting.fullRaiseCount + 1,
+    };
+  }
+
+  const cumulativeIncrease = targetStreetBet - betting.lastFullRaiseBet;
+  if (cumulativeIncrease >= betting.minRaiseIncrement) {
+    return {
+      currentBet: targetStreetBet,
+      lastFullRaiseBet: targetStreetBet,
+      minRaiseIncrement: betting.minRaiseIncrement,
+      fullRaiseCount: betting.fullRaiseCount + 1,
+    };
+  }
+
+  return {
+    ...betting,
+    currentBet: targetStreetBet,
+  };
+}
+
 function nextStreetAfter(street: HandStreet): HandStreet {
   switch (street) {
     case 'PREFLOP':
@@ -298,23 +338,7 @@ export function applyPlayerAction(
       }
       const delta = actingPlayer.stack;
       const targetStreetBet = actingPlayer.streetBet + delta;
-
-      if (targetStreetBet > state.betting.currentBet) {
-        const raiseIncrement = targetStreetBet - state.betting.currentBet;
-        if (raiseIncrement >= state.betting.minRaiseIncrement) {
-          nextBetting = {
-            currentBet: targetStreetBet,
-            lastFullRaiseBet: targetStreetBet,
-            minRaiseIncrement: raiseIncrement,
-            fullRaiseCount: state.betting.fullRaiseCount + 1,
-          };
-        } else {
-          nextBetting = {
-            ...state.betting,
-            currentBet: targetStreetBet,
-          };
-        }
-      }
+      nextBetting = resolveAllInBettingState(state.betting, targetStreetBet);
 
       updatedPlayer = {
         ...actingPlayer,
