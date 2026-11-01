@@ -9,3 +9,4 @@ export * from './errors.js';
 export * from './seating.js';
 export * from './rotation.js';
 export * from './hand.js';
+export * from './legal-actions.js';
