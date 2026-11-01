@@ -1,0 +1,19 @@
+services:
+  sidepot-poker:
+    image: ghcr.io/luizgdpulz/sidepot-poker:latest
+    container_name: sidepot-poker
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+    expose:
+      - "3000"
+    networks:
+      - proxy-net
+
+networks:
+  proxy-net:
+    external: true
