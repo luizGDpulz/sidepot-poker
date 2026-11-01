@@ -15,3 +15,4 @@ export * from './betting.js';
 export * from './showdown.js';
 export * from './tournament.js';
 export * from './history.js';
+export * from './protocol.js';
