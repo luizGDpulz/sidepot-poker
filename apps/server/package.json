@@ -1,0 +1,25 @@
+{
+  "name": "@sidepot/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authoritative Hono HTTP/WebSocket real-time poker room server",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node ./dist/index.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "@sidepot/core": "workspace:*",
+    "hono": "^4.13.14"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/ws": "^8.18.2",
+    "ws": "^8.22.1"
+  }
+}
